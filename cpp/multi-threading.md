@@ -5,6 +5,8 @@
 
 **Threads** allow for concurrent execution of tasks within a program. In C++, a thread represents a single sequence of execution and is created to perform a specific task in parallel with other threads. The `std::thread` class from the C++11 standard allows programmers to create and manage threads easily. While every C++ program starts with a single thread running the `main()` function, additional threads can be spawned to execute other functions concurrently.
 
+`std::thread`: https://en.cppreference.com/w/cpp/thread/thread
+
 ---
 
 ### Key Concepts:
@@ -239,10 +241,6 @@ int main() {
 ---
 
 
-## Understanding `join()`, `detach()`, and `joinable()` in C++ Threads (C++11)
-
----
-
 ### 1. **`join()`**
 
 The `join()` function is used to wait for a thread to complete. When you call `join()` on a thread, the main thread (or the calling thread) pauses its execution and waits for the specified thread to finish its execution. 
@@ -378,6 +376,8 @@ int main() {
 
 A **mutex** (short for mutual exclusion) is a synchronization primitive used to protect shared data from being simultaneously accessed or modified by multiple threads. When multiple threads attempt to access shared resources concurrently, race conditions can occur, which can lead to inconsistent or erroneous results. Mutexes provide a way to ensure that only one thread can access the critical section of code at a time.
 
+`std::mutex`: https://en.cppreference.com/w/cpp/thread/mutex
+
 ---
 
 ### Race Condition
@@ -511,6 +511,8 @@ int main() {
 ### `std::try_lock()` for Multiple Mutexes
 
 The `std::try_lock()` function allows you to attempt to lock multiple mutexes at once. It tries to lock each mutex in the order they are passed as arguments. If it fails to lock any of the mutexes, it will unlock all previously locked mutexes and return the index of the mutex that could not be locked.
+
+`std::try_lock()`: https://en.cppreference.com/w/cpp/thread/try_lock
 
 #### Key Points:
 1. **Locks Multiple Mutexes**: It attempts to lock all mutexes passed to it.
