@@ -771,3 +771,183 @@ int main() {
 
 ---
 
+### `std::lock_guard` in C++
+
+The `std::lock_guard` is a lightweight wrapper for acquiring and releasing a mutex. It is primarily used to manage mutexes in a **scoped manner**, ensuring that the mutex is always released when the scope is exited, either through normal completion or an exception.
+
+`std::lock_guard`: https://en.cppreference.com/w/cpp/thread/lock_guard
+
+#### Key Features of `std::lock_guard`:
+1. **Scope-based Mutex Ownership**: The mutex is locked when the `lock_guard` object is created and automatically unlocked when the `lock_guard` goes out of scope.
+2. **No Manual Unlocking**: There is no need (or possibility) to explicitly unlock the mutex, as it is automatically handled by `lock_guard`'s destructor.
+3. **Non-copyable**: `std::lock_guard` cannot be copied, which prevents accidental copying of the guard, ensuring that only one `lock_guard` owns the mutex at any time.
+
+#### Example of `std::lock_guard`:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx;
+
+void printMessage(const std::string& message) {
+    std::lock_guard<std::mutex> lock(mtx);  // Lock mutex for the scope of this function
+    std::cout << message << std::endl;
+}
+
+int main() {
+    std::thread t1(printMessage, "Hello from thread 1");
+    std::thread t2(printMessage, "Hello from thread 2");
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: The `std::lock_guard` object locks the mutex `mtx` when created. The mutex will be unlocked when `lock` goes out of scope at the end of the function, ensuring safe access to the shared resource (the `std::cout` stream).
+
+---
+
+### `std::unique_lock` in C++
+
+`std::unique_lock` is a more flexible version of `std::lock_guard`. It provides additional features for controlling the locking behavior of mutexes. It can be used in situations where more control is required, such as timed locks, deferred locking, or transferring ownership of the lock.
+
+`std::unique_lock`: https://en.cppreference.com/w/cpp/thread/unique_lock
+
+#### Key Features of `std::unique_lock`:
+1. **Flexible Locking**: Unlike `lock_guard`, `unique_lock` allows for more flexible locking strategies, including deferred locking (locking later), trying to lock without blocking, or adopting an already acquired lock.
+2. **Timed Locking**: `unique_lock` supports time-constrained attempts at locking, such as `try_lock_for()` and `try_lock_until()`.
+3. **Manual Unlocking**: With `unique_lock`, you have the ability to explicitly unlock the mutex, which allows greater control when needed.
+4. **Transfer Ownership**: `unique_lock` can transfer the ownership of the mutex (via move semantics), which means the lock can be moved between different scopes or functions, unlike `lock_guard` which cannot be transferred.
+
+#### Locking Strategies for `std::unique_lock`:
+- **defer_lock**: Does not acquire the mutex when the `unique_lock` object is created, allowing you to lock it later.
+- **try_to_lock**: Attempts to lock the mutex without blocking, returning immediately if the lock cannot be acquired.
+- **adopt_lock**: Assumes the mutex is already locked and takes ownership without trying to lock it again.
+
+#### Example of `std::unique_lock`:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::mutex mtx;
+
+void task() {
+    std::unique_lock<std::mutex> lock(mtx, std::defer_lock);  // Defer locking
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    
+    if (lock.try_lock()) {  // Try to acquire the lock without blocking
+        std::cout << "Lock acquired by task\n";
+    } else {
+        std::cout << "Could not acquire lock by task\n";
+    }
+}
+
+int main() {
+    std::thread t1(task);
+    std::thread t2(task);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: In this example, the `std::unique_lock` is created with the `defer_lock` option, which means the mutex is not locked immediately. The program then tries to acquire the lock using `try_lock()`, allowing the thread to attempt locking the mutex without blocking.
+
+---
+
+### Comparison of `std::lock_guard` and `std::unique_lock`
+
+| Feature                | `std::lock_guard`                           | `std::unique_lock`                           |
+|------------------------|---------------------------------------------|---------------------------------------------|
+| Mutex Ownership         | Immediate and scoped                        | Can be immediate, deferred, or adopted      |
+| Flexibility             | Less flexible                              | Highly flexible                             |
+| Locking Strategies      | Only immediate                             | Supports defer_lock, try_to_lock, adopt_lock|
+| Timed Locking           | Not supported                              | Supports `try_lock_for`, `try_lock_until`   |
+| Manual Unlocking        | Not supported                              | Supported                                   |
+| Ownership Transfer      | Not supported (non-movable)                 | Supported (movable)                         |
+| Use Case                | Simple mutex locking (scoped locking)       | Advanced use cases with more control        |
+
+---
+
+### Example: `std::unique_lock` with Multiple Features
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::mutex mtx;
+
+void task1() {
+    std::unique_lock<std::mutex> lock(mtx);  // Immediate lock
+    std::cout << "Task 1 has acquired the lock\n";
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+    std::cout << "Task 1 is releasing the lock\n";
+}
+
+void task2() {
+    std::unique_lock<std::mutex> lock(mtx, std::try_to_lock);  // Try to lock
+    if (lock.owns_lock()) {
+        std::cout << "Task 2 acquired the lock\n";
+    } else {
+        std::cout << "Task 2 could not acquire the lock\n";
+    }
+}
+
+int main() {
+    std::thread t1(task1);
+    std::this_thread::sleep_for(std::chrono::milliseconds(500));  // Small delay to let task1 acquire lock
+    std::thread t2(task2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: 
+  - `task1()` acquires the lock immediately and holds it for 2 seconds.
+  - `task2()` tries to acquire the lock using `std::try_to_lock`. If `task1()` is still holding the lock, `task2()` will fail to acquire it.
+  - This demonstrates the flexibility of `std::unique_lock` in handling different locking strategies.
+
+---
+
+### Comparison between `std::lock_guard` and `std::unique_lock`
+
+
+| **Feature**              | **`std::lock_guard`**                       | **`std::unique_lock`**                      |
+|--------------------------|---------------------------------------------|---------------------------------------------|
+| **Purpose**               | Simple and lightweight mutex management     | Flexible mutex management with more control |
+| **Mutex Locking**         | Locks the mutex immediately upon creation   | Can lock immediately, defer, try, or adopt  |
+| **Locking Strategies**    | Only immediate locking                      | Supports `defer_lock`, `try_to_lock`, `adopt_lock` |
+| **Lock Acquisition**      | Always locks upon construction              | Can lock upon construction or later         |
+| **Explicit Unlocking**    | Not allowed, unlocks when the object goes out of scope | Can explicitly unlock the mutex            |
+| **Ownership Transfer**    | Not supported, non-movable                  | Supported via move semantics (moveable but not copyable) |
+| **Timed Locking**         | Not supported                              | Supports `try_lock_for()` and `try_lock_until()` |
+| **Exception Safety**      | Automatic unlock when going out of scope (RAII) | Automatic unlock, but allows more control in error handling |
+| **Use Case**              | Best for simple, scoped, automatic mutex locking | Best for more complex scenarios where more control is needed over the mutex lifecycle |
+| **Overhead**              | Minimal, lightweight                        | Slightly higher overhead due to flexibility |
+| **Scope-based**           | Yes (RAII pattern)                         | Yes (RAII pattern), but can manually control unlocking and locking |
+| **Copyable**              | No                                          | No                                          |
+| **Recursive Locking**     | No                                          | Supports recursive locking if used with `std::recursive_mutex` |
+
+
+#### When to Use:
+- **`std::lock_guard`** is the best choice when you need simple, reliable, and automatic locking and unlocking of a mutex within a block of code. It's lightweight and ensures the mutex is locked immediately and released automatically when it goes out of scope.
+  
+- **`std::unique_lock`** is ideal for more advanced scenarios where you need additional control over the mutex, such as deferred locking, timed locking, or manually unlocking and re-locking. It is also useful when transferring ownership of the mutex lock is required or when you need to work with condition variables.
+
+
+
+
