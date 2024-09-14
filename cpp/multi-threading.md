@@ -599,3 +599,175 @@ int main() {
 - **`std::try_lock()`**: Tries to acquire locks on multiple mutexes in a non-blocking way.
   - Returns `-1` if successful (all mutexes locked); otherwise, returns the index of the first mutex it failed to lock.
   - Ensures that all previously locked mutexes are unlocked if it fails to acquire any mutex.
+
+---
+### Timed Mutex in C++ (std::timed_mutex)
+
+A **timed mutex** is a synchronization primitive that adds timing capabilities to a regular `std::mutex`. In addition to the regular locking and unlocking mechanisms, `std::timed_mutex` offers time-based attempts to acquire a lock. This is useful when a thread should only wait for a lock for a certain period before giving up and doing something else.
+
+`std::timed_mutex`: https://en.cppreference.com/w/cpp/thread/timed_mutex
+
+#### Key Features:
+1. **Blocking**: Like a regular mutex, a timed mutex blocks the thread until it acquires the lock or the specified timeout expires.
+2. **Timeout Mechanism**: If the timeout period expires and the lock has not been acquired, it returns `false`; otherwise, it returns `true`.
+3. **Functions**:
+   - `lock()` (inherited from `std::mutex`): Blocks until the lock is acquired.
+   - `try_lock()` (inherited from `std::mutex`): Attempts to lock and returns immediately (`true` if successful, `false` otherwise).
+   - **`try_lock_for(duration)`**: Tries to lock the mutex for a specified duration.
+   - **`try_lock_until(time_point)`**: Tries to lock the mutex until a specified time point.
+   - `unlock()` (inherited from `std::mutex`): Unlocks the mutex.
+
+---
+
+#### Example: Using `try_lock_for`
+
+The `try_lock_for()` function attempts to lock the mutex for a specified duration. If it successfully locks the mutex within that duration, it returns `true`. If the duration expires before the mutex can be locked, it returns `false`.
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::timed_mutex tmtx;
+
+void task(int id) {
+    if (tmtx.try_lock_for(std::chrono::milliseconds(500))) {
+        std::cout << "Thread " << id << " acquired the lock.\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // Simulate some work
+        tmtx.unlock();
+    } else {
+        std::cout << "Thread " << id << " could not acquire the lock.\n";
+    }
+}
+
+int main() {
+    std::thread t1(task, 1);
+    std::thread t2(task, 2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: Thread `t1` attempts to lock the mutex for 500 milliseconds. If it successfully locks the mutex, it holds it for 1 second. Meanwhile, `t2` also tries to lock the mutex for 500 milliseconds. Depending on timing, `t2` might fail to acquire the lock if `t1` is still holding it.
+
+---
+
+#### Example: Using `try_lock_until`
+
+The `try_lock_until()` function attempts to lock the mutex until a specific **time point** is reached. If it successfully locks the mutex before the time point, it returns `true`. Otherwise, it returns `false` if the time point is reached without acquiring the lock.
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <chrono>
+
+std::timed_mutex tmtx;
+
+void task(int id) {
+    auto timeout_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+    if (tmtx.try_lock_until(timeout_time)) {
+        std::cout << "Thread " << id << " acquired the lock.\n";
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // Simulate some work
+        tmtx.unlock();
+    } else {
+        std::cout << "Thread " << id << " could not acquire the lock.\n";
+    }
+}
+
+int main() {
+    std::thread t1(task, 1);
+    std::thread t2(task, 2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: Thread `t1` attempts to lock the mutex until a specific time point (500 milliseconds from the current time). `t2` also tries to lock the mutex until the same time point. Depending on the state of `t1`, `t2` might fail to acquire the lock if the time runs out.
+
+---
+
+### Recursive Mutex in C++ (`std::recursive_mutex`)
+
+A **recursive mutex** allows the same thread to lock the mutex multiple times without causing a deadlock. This is particularly useful when a function needs to call itself recursively or when a function calls another function that tries to lock the same mutex.
+
+`std::recursive_mutex`: https://en.cppreference.com/w/cpp/thread/recursive_mutex
+
+#### Key Features:
+1. **Same Thread Can Lock Multiple Times**: A recursive mutex allows the same thread to acquire the lock multiple times. However, it must release the lock the same number of times.
+2. **Lock Count**: A recursive mutex keeps track of how many times it has been locked by the same thread. The thread must call `unlock()` the same number of times to completely release the lock.
+3. **Undefined Maximum Locks**: There is no predefined limit on how many times the same thread can lock a recursive mutex, but the system may throw a `std::system_error` if the lock limit is reached.
+
+---
+
+#### Example 1: Recursive Mutex with Recursion
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::recursive_mutex rmtx;
+
+void recursiveTask(int count) {
+    if (count > 0) {
+        rmtx.lock();
+        std::cout << "Locked, count = " << count << std::endl;
+        recursiveTask(count - 1);
+        rmtx.unlock();
+        std::cout << "Unlocked, count = " << count << std::endl;
+    }
+}
+
+int main() {
+    std::thread t1(recursiveTask, 5);
+    t1.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: The `recursiveTask()` function locks the recursive mutex and calls itself recursively. The same thread locks the mutex multiple times, but must also unlock it the same number of times to fully release the mutex. Without a recursive mutex, this would result in a deadlock.
+
+---
+
+#### Example 2: Recursive Mutex in a Loop
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::recursive_mutex rmtx;
+
+void loopTask() {
+    for (int i = 0; i < 5; ++i) {
+        rmtx.lock();
+        std::cout << "Locked, iteration = " << i << std::endl;
+    }
+
+    for (int i = 0; i < 5; ++i) {
+        rmtx.unlock();
+        std::cout << "Unlocked, iteration = " << i << std::endl;
+    }
+}
+
+int main() {
+    std::thread t1(loopTask);
+    t1.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: In this example, the same thread locks the recursive mutex 5 times in a loop, and then unlocks it 5 times. Since `std::recursive_mutex` allows the same thread to lock the mutex multiple times, this works without deadlocking.
+
+---
+
