@@ -864,20 +864,6 @@ int main() {
 
 ---
 
-### Comparison of `std::lock_guard` and `std::unique_lock`
-
-| Feature                | `std::lock_guard`                           | `std::unique_lock`                           |
-|------------------------|---------------------------------------------|---------------------------------------------|
-| Mutex Ownership         | Immediate and scoped                        | Can be immediate, deferred, or adopted      |
-| Flexibility             | Less flexible                              | Highly flexible                             |
-| Locking Strategies      | Only immediate                             | Supports defer_lock, try_to_lock, adopt_lock|
-| Timed Locking           | Not supported                              | Supports `try_lock_for`, `try_lock_until`   |
-| Manual Unlocking        | Not supported                              | Supported                                   |
-| Ownership Transfer      | Not supported (non-movable)                 | Supported (movable)                         |
-| Use Case                | Simple mutex locking (scoped locking)       | Advanced use cases with more control        |
-
----
-
 ### Example: `std::unique_lock` with Multiple Features
 
 ```cpp
@@ -949,5 +935,499 @@ int main() {
 - **`std::unique_lock`** is ideal for more advanced scenarios where you need additional control over the mutex, such as deferred locking, timed locking, or manually unlocking and re-locking. It is also useful when transferring ownership of the mutex lock is required or when you need to work with condition variables.
 
 
+## Condition Variable in C++ Threading
+
+A **condition variable** in C++ is used to synchronize threads by allowing one or more threads to wait for a condition and another thread to notify them when the condition is met. Condition variables are particularly useful in solving problems where one thread needs to wait for another thread to produce or consume data, such as in the **Producer-Consumer Problem**.
+
+https://en.cppreference.com/w/cpp/thread/condition_variable
+
+#### Key Features:
+1. **Notifications**: Threads can signal each other using:
+   - `notify_one()`: Notifies one waiting thread.
+   - `notify_all()`: Notifies all waiting threads.
+   
+2. **Mutex Requirement**: A condition variable must always be used in conjunction with a mutex to protect the shared data.
+
+3. **Waiting and Notification**: 
+   - A thread can wait for a condition to be met by calling `wait()` on the condition variable.
+   - Another thread can notify the waiting threads that the condition is met using `notify_one()` or `notify_all()`.
+
+4. **Producer-Consumer Problem**: One of the classic examples where condition variables are used is the Producer-Consumer problem. In this scenario, the producer generates data and the consumer consumes it. Synchronization is necessary to ensure that the consumer waits until the producer has generated data.
+
+---
+
+### Producer-Consumer (Bounded Buffer Problem) Using Condition Variables
+
+The **Producer-Consumer Problem** involves two types of threads:
+- The **Producer** thread generates data and places it into a buffer.
+- The **Consumer** thread removes data from the buffer for processing.
+
+#### Problem Constraints:
+- The producer must wait if the buffer is full.
+- The consumer must wait if the buffer is empty.
+- The threads need to communicate with each other about when data is available or when space is available in the buffer, which is achieved through condition variables.
+
+#### Example Implementation:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+#include <queue>
+#include <chrono>
+
+std::mutex mtx;
+std::condition_variable cv;
+std::queue<int> buffer;
+const unsigned int maxBufferSize = 10;
+
+bool done = false;
+
+// Producer thread function
+void producer(int producerID) {
+    int item = 0;
+    while (!done) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Simulate time to produce an item
+        std::unique_lock<std::mutex> lock(mtx);  // Lock the mutex
+        
+        // Wait until the buffer is not full
+        cv.wait(lock, [] { return buffer.size() < maxBufferSize; });
+
+        // Produce an item and add it to the buffer
+        std::cout << "Producer " << producerID << " produced: " << item << std::endl;
+        buffer.push(item++);
+        
+        // Notify the consumer that an item has been produced
+        cv.notify_all();
+    }
+}
+
+// Consumer thread function
+void consumer(int consumerID) {
+    while (!done) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));  // Simulate time to consume an item
+        std::unique_lock<std::mutex> lock(mtx);  // Lock the mutex
+
+        // Wait until the buffer is not empty
+        cv.wait(lock, [] { return !buffer.empty(); });
+
+        // Consume the item from the buffer
+        int item = buffer.front();
+        buffer.pop();
+        std::cout << "Consumer " << consumerID << " consumed: " << item << std::endl;
+
+        // Notify the producer that an item has been consumed
+        cv.notify_all();
+    }
+}
+
+int main() {
+    // Create producer and consumer threads
+    std::thread producerThread1(producer, 1);
+    std::thread producerThread2(producer, 2);
+    std::thread consumerThread1(consumer, 1);
+    std::thread consumerThread2(consumer, 2);
+
+    // Let the threads run for some time
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+
+    // Set done to true to signal termination
+    done = true;
+
+    // Notify all threads to wake up and exit
+    cv.notify_all();
+
+    // Join the threads
+    producerThread1.join();
+    producerThread2.join();
+    consumerThread1.join();
+    consumerThread2.join();
+
+    return 0;
+}
+```
+
+### Explanation of the Code:
+
+#### Producer Thread Steps:
+1. **Lock the mutex**: The producer acquires the mutex to ensure exclusive access to the shared buffer.
+2. **Check buffer state**: If the buffer is full, the producer waits using `cv.wait(lock, condition)` until the buffer has space.
+3. **Produce an item**: Once the buffer has space, the producer generates an item and adds it to the buffer.
+4. **Unlock the mutex**: The producer releases the mutex when done.
+5. **Notify the consumer**: The producer uses `cv.notify_all()` to notify the consumer that data is available.
+
+#### Consumer Thread Steps:
+1. **Lock the mutex**: The consumer acquires the mutex to ensure exclusive access to the shared buffer.
+2. **Check buffer state**: If the buffer is empty, the consumer waits using `cv.wait(lock, condition)` until data is available.
+3. **Consume an item**: Once the buffer has data, the consumer removes an item from the buffer.
+4. **Unlock the mutex**: The consumer releases the mutex when done.
+5. **Notify the producer**: The consumer uses `cv.notify_all()` to notify the producer that space is available in the buffer.
+
+---
+
+### Key Concepts of Condition Variables in Producer-Consumer Problem:
+
+1. **Mutex**: Used to protect the shared resource (buffer) so that only one thread can access it at a time.
+2. **Condition Variable**: Used to signal between producer and consumer threads.
+   - **`wait()`**: Blocks the thread until a certain condition is met.
+   - **`notify_one()` or `notify_all()`**: Wakes up one or all threads waiting on the condition variable when the condition changes.
+3. **Producer-Consumer Synchronization**:
+   - The producer adds items to the buffer and notifies the consumer.
+   - The consumer waits for items to be available, consumes them, and notifies the producer if space is available.
+
+### Condition Variables: Key Methods
+
+- **`cv.wait(lock, condition)`**: 
+   - The waiting thread will block until the condition evaluates to true.
+   - This is always done while holding a lock (mutex), so the shared resource is protected during the check.
+- **`cv.notify_one()`**: 
+   - Wakes up one waiting thread.
+- **`cv.notify_all()`**: 
+   - Wakes up all threads that are waiting on the condition variable.
+
+---
+
+
+## Deadlock in Multithreading
+
+#### What is Deadlock?
+
+A **deadlock** occurs in multithreading when two or more threads are unable to proceed because each thread is waiting for the other to release a resource, creating a cycle of dependency that halts execution. In a deadlock, none of the threads can make progress because they are all blocked waiting on each other.
+
+#### Conditions for Deadlock:
+1. **Mutual Exclusion**: At least one resource must be held in a non-shareable mode (only one thread can use the resource at a time).
+2. **Hold and Wait**: A thread holds at least one resource and is waiting to acquire additional resources held by other threads.
+3. **No Preemption**: Resources cannot be forcibly taken away from a thread; they must be released voluntarily.
+4. **Circular Wait**: A set of threads must be waiting for each other in a circular chain, where each thread is holding a resource and waiting for the next thread in the chain to release another resource.
+
+#### Ways to Deal with Deadlock:
+1. **Deadlock Prevention** (by avoiding one or more of the deadlock conditions).
+2. **Deadlock Avoidance** (use techniques like the Banker's Algorithm to avoid unsafe states).
+3. **Deadlock Detection and Recovery** (detect deadlock and take corrective actions such as terminating threads or preempting resources).
+4. **Using Timeout** (set a timeout for resource requests to break the cycle).
+5. **Order Locking** (acquire resources in a predefined order to prevent circular wait).
+6. **Resource Hierarchy** (define a strict ordering of resources and ensure threads lock resources in the same order).
+
+---
+
+### `std::lock()` in C++11
+
+The `std::lock()` function in C++11 is used to lock multiple mutexes simultaneously, preventing deadlock by ensuring no circular waiting occurs. It provides a safer way to lock multiple mutexes at once.
+
+https://en.cppreference.com/w/cpp/thread/lock
+
+#### Key Features:
+1. **Locks Multiple Mutexes**: It locks all provided mutexes via a sequence of calls to `lock()`, `try_lock()`, or `unlock()`.
+2. **Order of Locking Not Defined**: It locks the mutexes in any arbitrary order but ensures no deadlock occurs.
+3. **Blocking Call**: The function blocks until all mutexes have been successfully locked.
+
+#### Example:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx1, mtx2;
+
+void task1() {
+    std::lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::cout << "Task 1 has locked both mutexes.\n";
+    
+    // Unlock the mutexes
+    mtx1.unlock();
+    mtx2.unlock();
+}
+
+void task2() {
+    std::lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::cout << "Task 2 has locked both mutexes.\n";
+
+    // Unlock the mutexes
+    mtx1.unlock();
+    mtx2.unlock();
+}
+
+int main() {
+    std::thread t1(task1);
+    std::thread t2(task2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: In this example, `std::lock(mtx1, mtx2)` is used to lock both mutexes `mtx1` and `mtx2` simultaneously in both tasks. This avoids deadlock, as `std::lock()` guarantees that both mutexes will be locked without causing a circular wait.
+
+
+### `std::scoped_lock` in C++17
+
+`std::scoped_lock` is a feature introduced in C++17 to simplify and improve the locking of multiple mutexes. It is designed as a replacement for the combination of `std::lock()` and `std::lock_guard`, offering a more convenient and safer way to lock multiple mutexes.
+
+https://en.cppreference.com/w/cpp/thread/scoped_lock
+
+#### Key Features:
+1. **Multiple Mutex Locking**: `std::scoped_lock` can lock multiple mutexes at once, just like `std::lock()`, but it automatically manages unlocking when it goes out of scope.
+2. **No Deadlock**: Just like `std::lock()`, it locks the mutexes in a safe order to avoid deadlock.
+3. **RAII (Resource Acquisition Is Initialization)**: It automatically releases the mutexes when the `scoped_lock` object goes out of scope, ensuring proper unlocking even if an exception is thrown.
+4. **Simpler Syntax**: Compared to the combination of `std::lock()` and `std::lock_guard`, `std::scoped_lock` simplifies the syntax by providing a one-step process for locking multiple mutexes.
+
+#### Example of `std::scoped_lock`:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx1, mtx2;
+
+void task1() {
+    std::scoped_lock lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::cout << "Task 1 has locked both mutexes.\n";
+    // Mutexes are automatically unlocked when 'lock' goes out of scope
+}
+
+void task2() {
+    std::scoped_lock lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::cout << "Task 2 has locked both mutexes.\n";
+    // Mutexes are automatically unlocked when 'lock' goes out of scope
+}
+
+int main() {
+    std::thread t1(task1);
+    std::thread t2(task2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: In this example, `std::scoped_lock` locks both `mtx1` and `mtx2` safely and automatically unlocks them when the `scoped_lock` object goes out of scope. It avoids the need to manually unlock each mutex, ensuring exception safety and cleaner code.
+
+---
+
+### Comparison: `std::lock()` vs `std::scoped_lock`
+
+| Feature               | **`std::lock()`**                          | **`std::scoped_lock`**                     |
+|-----------------------|--------------------------------------------|--------------------------------------------|
+| **Mutex Locking**      | Locks multiple mutexes in a safe order     | Locks multiple mutexes in a safe order     |
+| **Manual Unlocking**   | Must use `std::lock_guard` or manual unlock| Automatic unlocking (RAII) when it goes out of scope |
+| **RAII Support**       | Requires combination with `std::lock_guard`| Supports RAII directly                     |
+| **Exception Safety**   | Must combine with `std::lock_guard` for RAII| Provides automatic exception safety        |
+| **Syntax Complexity**  | More verbose (`std::lock()` + `std::lock_guard`) | Simpler, one-step locking                  |
+| **Flexibility**        | Provides control over lock and unlock      | Less flexible, but ensures automatic unlocking |
+| **Availability**       | C++11                                      | C++17                                      |
+
+---
+
+### Example of `std::lock()` with `std::lock_guard`:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+
+std::mutex mtx1, mtx2;
+
+void task1() {
+    std::lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::lock_guard<std::mutex> lock1(mtx1, std::adopt_lock);  // Adopt the lock
+    std::lock_guard<std::mutex> lock2(mtx2, std::adopt_lock);  // Adopt the lock
+    std::cout << "Task 1 has locked both mutexes.\n";
+}
+
+void task2() {
+    std::lock(mtx1, mtx2);  // Lock both mutexes at once
+    std::lock_guard<std::mutex> lock1(mtx1, std::adopt_lock);  // Adopt the lock
+    std::lock_guard<std::mutex> lock2(mtx2, std::adopt_lock);  // Adopt the lock
+    std::cout << "Task 2 has locked both mutexes.\n";
+}
+
+int main() {
+    std::thread t1(task1);
+    std::thread t2(task2);
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+- **Explanation**: In this case, `std::lock()` locks both mutexes, and then `std::lock_guard` adopts the locks with `std::adopt_lock`. This ensures that the mutexes are properly locked and unlocked. However, this approach is more verbose than using `std::scoped_lock`.
+
+---
+
+### Key Differences:
+1. **RAII (Automatic Unlocking)**:
+   - **`std::lock()`** requires you to manually manage unlocking with `std::lock_guard` or manual calls to `unlock()`. This makes the code more complex and prone to errors.
+   - **`std::scoped_lock`** automatically handles unlocking when the scope is exited, reducing the risk of forgetting to release a mutex.
+   
+2. **Exception Safety**:
+   - **`std::lock()`** combined with `std::lock_guard` provides exception safety, but the code becomes more verbose.
+   - **`std::scoped_lock`** provides built-in exception safety since it locks and unlocks in the scope automatically.
+   
+3. **Ease of Use**:
+   - **`std::lock()`** is more complex to use because it requires additional calls to either `std::lock_guard` or manual unlocking, making the code more verbose.
+   - **`std::scoped_lock`** is simpler, allowing you to lock multiple mutexes with a single object.
+
+4. **Availability**:
+   - **`std::lock()`** has been available since C++11.
+   - **`std::scoped_lock`** is available starting from C++17, providing a cleaner and more modern syntax.
+
+---
+
+## `std::promise` and `std::future` in C++ Threading
+
+In C++11, `std::promise` and `std::future` are used for communication between threads. They are a part of the C++ Standard Library's concurrency features and help to pass results (or exceptions) from one thread to another.
+
+---
+
+### `std::promise`
+
+A **`std::promise`** is an object that holds a value or exception that can be set by one thread and retrieved by another. It is typically used by a producer thread to pass data or an exception to a consumer thread.
+
+#### Key Features:
+1. **Setting Values**: A thread can set a value into the promise using the `set_value()` method.
+2. **Setting Exceptions**: A thread can signal an exception to another thread using the `set_exception()` method.
+
+---
+
+### `std::future`
+
+A **`std::future`** is used to retrieve the result of an asynchronous operation. It acts as a placeholder for a value that will eventually be set by a `std::promise`. The thread that holds the `std::future` waits for the result (or an exception) to become available.
+
+#### Key Features:
+1. **Get Values**: A thread can retrieve the result from a `std::promise` using the `get()` method on the associated `std::future`.
+2. **Check Availability**: The thread can check if the value is ready using `valid()` or `wait_for()`.
+3. **Blocking Call**: When the `get()` method is called on `std::future`, it blocks until the promised value is available or an exception is set.
+
+---
+
+### Relationship Between `std::promise` and `std::future`
+
+- **Producer (Promise)**: The `std::promise` is responsible for producing the value (or exception) and passing it to the `std::future`.
+- **Consumer (Future)**: The `std::future` is responsible for consuming the value when it is ready and waits for the result.
+
+When you create a `std::promise`, you can obtain a `std::future` that is linked to that promise using the `get_future()` method. This `std::future` can be passed to another thread, which will wait for the result from the promise.
+
+---
+
+### Example: `std::promise` and `std::future`
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <future>
+
+// Function to set the value in the promise (Producer)
+void produceData(std::promise<int>& prom) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // Simulate work
+    prom.set_value(10);  // Set the value in the promise
+}
+
+// Function to get the value from the future (Consumer)
+void consumeData(std::future<int>& fut) {
+    std::cout << "Waiting for the value..." << std::endl;
+    int value = fut.get();  // Get the value (blocks until value is ready)
+    std::cout << "Value received: " << value << std::endl;
+}
+
+int main() {
+    // Create a promise and obtain the associated future
+    std::promise<int> prom;
+    std::future<int> fut = prom.get_future();
+
+    // Create threads for producer and consumer
+    std::thread producer(produceData, std::ref(prom));
+    std::thread consumer(consumeData, std::ref(fut));
+
+    // Wait for threads to finish
+    producer.join();
+    consumer.join();
+
+    return 0;
+}
+```
+
+#### Explanation:
+1. **Producer Thread**: The `produceData()` function simulates work (with a delay of 2 seconds) and then sets a value (`10`) into the `std::promise`.
+2. **Consumer Thread**: The `consumeData()` function waits for the value using `fut.get()`, which blocks the consumer thread until the value is available in the associated `std::promise`.
+3. **Synchronization**: The consumer thread is automatically synchronized with the producer thread because `std::future::get()` waits for the result.
+
+---
+
+### Example: Handling Exceptions with `std::promise` and `std::future`
+
+You can also use `std::promise` and `std::future` to pass exceptions between threads.
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <future>
+#include <stdexcept>
+
+// Function to set an exception in the promise (Producer)
+void produceException(std::promise<int>& prom) {
+    try {
+        throw std::runtime_error("Error: Something went wrong!");  // Simulate an error
+    } catch (...) {
+        prom.set_exception(std::current_exception());  // Pass the exception to the promise
+    }
+}
+
+// Function to get the result or exception from the future (Consumer)
+void consumeData(std::future<int>& fut) {
+    try {
+        int value = fut.get();  // Get the value or exception
+        std::cout << "Value received: " << value << std::endl;
+    } catch (const std::exception& e) {
+        std::cout << "Exception caught: " << e.what() << std::endl;
+    }
+}
+
+int main() {
+    // Create a promise and obtain the associated future
+    std::promise<int> prom;
+    std::future<int> fut = prom.get_future();
+
+    // Create threads for producer and consumer
+    std::thread producer(produceException, std::ref(prom));
+    std::thread consumer(consumeData, std::ref(fut));
+
+    // Wait for threads to finish
+    producer.join();
+    consumer.join();
+
+    return 0;
+}
+```
+
+#### Explanation:
+1. **Producer Thread**: The `produceException()` function throws an exception, and the exception is caught and passed to the `std::promise` using `set_exception()`.
+2. **Consumer Thread**: The `consumeData()` function tries to retrieve the value from the `std::future`. If an exception is stored in the `std::promise`, it is rethrown when `get()` is called, and the consumer catches and handles the exception.
+
+---
+
+### Key Methods of `std::promise` and `std::future`
+
+#### `std::promise`
+- **`set_value(T value)`**: Sets the value of the promise that will be passed to the future.
+- **`set_exception(std::exception_ptr)`**: Passes an exception to the future.
+- **`get_future()`**: Returns the `std::future` associated with the promise.
+
+#### `std::future`
+- **`get()`**: Retrieves the value from the future, blocking the calling thread if the value is not yet available. If an exception is set in the promise, it rethrows the exception.
+- **`valid()`**: Returns whether the future is valid and associated with a promise.
+- **`wait()`**: Blocks until the value is available.
+- **`wait_for(duration)`**: Waits for a specific duration for the value to be available.
+- **`wait_until(time_point)`**: Waits until a specific time point for the value to be available.
+
+---
 
 
