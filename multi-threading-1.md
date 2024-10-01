@@ -988,13 +988,13 @@ bool done = false;
 void producer(int producerID) {
     int item = 0;
     while (!done) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Simulate time to produce an item
         std::unique_lock<std::mutex> lock(mtx);  // Lock the mutex
         
         // Wait until the buffer is not full
         cv.wait(lock, [] { return buffer.size() < maxBufferSize; });
 
         // Produce an item and add it to the buffer
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));  // Simulate time to produce an item
         std::cout << "Producer " << producerID << " produced: " << item << std::endl;
         buffer.push(item++);
         
@@ -1006,7 +1006,6 @@ void producer(int producerID) {
 // Consumer thread function
 void consumer(int consumerID) {
     while (!done) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(150));  // Simulate time to consume an item
         std::unique_lock<std::mutex> lock(mtx);  // Lock the mutex
 
         // Wait until the buffer is not empty
@@ -1015,6 +1014,7 @@ void consumer(int consumerID) {
         // Consume the item from the buffer
         int item = buffer.front();
         buffer.pop();
+        std::this_thread::sleep_for(std::chrono::milliseconds(150));  // Simulate time to consume an item
         std::cout << "Consumer " << consumerID << " consumed: " << item << std::endl;
 
         // Notify the producer that an item has been consumed
@@ -1427,6 +1427,468 @@ int main() {
 - **`wait()`**: Blocks until the value is available.
 - **`wait_for(duration)`**: Waits for a specific duration for the value to be available.
 - **`wait_until(time_point)`**: Waits until a specific time point for the value to be available.
+
+---
+
+### `std::async` in C++11
+
+`std::async` is a high-level abstraction in C++11 for running functions asynchronously. It provides a simple way to execute tasks in parallel, without the need for manually managing threads and promises. It returns a `std::future` object that allows you to retrieve the result of the asynchronous operation once it’s completed.
+
+https://en.cppreference.com/w/cpp/thread/async
+
+---
+
+### Key Features of `std::async`
+
+1. **Runs a Function Asynchronously**: `std::async` allows you to run a function asynchronously in a separate thread (or deferred until it is needed).
+2. **Returns a `std::future`**: It returns a `std::future` that holds the result of the function. The calling thread can retrieve the result using `future.get()`.
+3. **Automatically Manages Thread Creation**: `std::async` automatically creates a thread or uses an internal thread pool to execute the function.
+4. **Supports Multiple Launch Policies**: You can specify how the task should be launched using `std::launch` policies.
+
+---
+
+### Launch Policies
+
+`std::async` can be called with one of three launch policies that control when and how the function is executed:
+
+1. **`std::launch::async`**: 
+   - Forces the function to run asynchronously in a new thread.
+   - The task will start immediately in a separate thread.
+
+2. **`std::launch::deferred`**: 
+   - The function is not run until its result is explicitly needed (e.g., when `future.get()` is called).
+   - The task runs synchronously in the same thread when the result is requested.
+
+3. **`std::launch::async | std::launch::deferred` (default)**: 
+   - The function is executed either asynchronously or deferred, depending on the system's discretion.
+   - The decision to execute the task in a separate thread or lazily (only when the result is requested) is up to the implementation.
+
+---
+
+### Example of `std::async` with Different Launch Policies
+
+```cpp
+#include <iostream>
+#include <future>
+#include <thread>
+#include <chrono>
+
+// A sample function to be executed asynchronously
+int calculateSquare(int x) {
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // Simulate work
+    return x * x;
+}
+
+int main() {
+    // 1. Launch the function asynchronously using std::launch::async
+    std::future<int> asyncFuture = std::async(std::launch::async, calculateSquare, 5);
+    std::cout << "Async call is running...\n";
+    
+    // 2. Launch the function with deferred execution using std::launch::deferred
+    std::future<int> deferredFuture = std::async(std::launch::deferred, calculateSquare, 6);
+    std::cout << "Deferred call will run when get() is called...\n";
+
+    // 3. Get the result of async call (blocks until the result is ready)
+    std::cout << "Result of async call: " << asyncFuture.get() << std::endl;
+
+    // 4. Get the result of deferred call (function runs now)
+    std::cout << "Result of deferred call: " << deferredFuture.get() << std::endl;
+
+    return 0;
+}
+```
+
+#### Explanation:
+
+1. **`std::launch::async`**:
+   - The function `calculateSquare(5)` runs asynchronously in a separate thread immediately.
+   - The program prints a message, and `future.get()` blocks the main thread until the result is ready.
+   
+2. **`std::launch::deferred`**:
+   - The function `calculateSquare(6)` is deferred and runs only when the result is explicitly requested by `future.get()`. The function executes synchronously in the main thread.
+
+---
+
+### How `std::async` Works
+
+1. **Automatic Thread Creation**: When you call `std::async` with the `std::launch::async` policy, it automatically creates a new thread (or picks one from the internal thread pool) and starts the function in parallel.
+2. **Promise and Future**: Internally, `std::async` creates a `std::promise` and passes it to the thread running the function. The return value of the function is set in the `std::promise`, and the associated `std::future` is returned to the caller.
+3. **Synchronized Return**: When the asynchronous task is complete, the result is available via the `std::future` object. The main thread (or any other consumer thread) can call `future.get()` to retrieve the result.
+
+---
+
+### Example with Lambda and Functor
+
+You can pass a lambda function or functor to `std::async`, just as you would with a regular function.
+
+#### Example with Lambda:
+
+```cpp
+#include <iostream>
+#include <future>
+
+int main() {
+    // Run a lambda function asynchronously
+    auto futureLambda = std::async(std::launch::async, [] (int x) {
+        return x * x;
+    }, 10);
+
+    std::cout << "Result of async lambda: " << futureLambda.get() << std::endl;
+    return 0;
+}
+```
+
+#### Example with Functor:
+
+```cpp
+#include <iostream>
+#include <future>
+
+// Functor class
+class Multiply {
+public:
+    int operator()(int x, int y) {
+        return x * y;
+    }
+};
+
+int main() {
+    // Run a functor asynchronously
+    Multiply multiply;
+    auto futureFunctor = std::async(std::launch::async, multiply, 3, 4);
+
+    std::cout << "Result of async functor: " << futureFunctor.get() << std::endl;
+    return 0;
+}
+```
+
+---
+
+### Side Notes:
+1. **Thread Pool Management**: Some implementations of `std::async` may use a thread pool for asynchronous execution. However, this is implementation-specific and not guaranteed by the standard.
+2. **Blocking Behavior**: When calling `future.get()`, the main thread will block until the asynchronous task has completed and the result is available.
+
+---
+
+### Comparison of Launch Policies
+
+| **Launch Policy**                | **Execution**                                               | **Blocking Behavior**                                       |
+|-----------------------------------|-------------------------------------------------------------|-------------------------------------------------------------|
+| `std::launch::async`              | Always runs asynchronously in a new thread                  | Blocks when `future.get()` is called if task is not finished |
+| `std::launch::deferred`           | Executes only when `future.get()` is called (in the same thread) | No blocking until `future.get()` is called (then runs synchronously) |
+| default | System decides whether to run asynchronously or deferred    | Blocking behavior depends on how the task was launched       |
+
+---
+
+## Semaphores
+
+### Binary Semaphores in C++
+
+A **binary semaphore** is a synchronization primitive that allows or restricts access to a shared resource by one or more threads. Unlike general semaphores, which can have a counter with any value, binary semaphores only have two states: **locked** (or unavailable) and **unlocked** (or available). Binary semaphores are often used in multithreading environments to signal between two threads.
+
+In C++, binary semaphores can be implemented using:
+- **`std::mutex` and `std::condition_variable`**: Provides basic binary semaphore functionality.
+- **`std::binary_semaphore`** (introduced in C++20): A more direct and standardized implementation for binary semaphores.
+
+---
+
+### Binary Semaphore Using `std::mutex` and `std::condition_variable`
+
+Before C++20, binary semaphores were commonly implemented using `std::mutex` and `std::condition_variable`. Here's how this can be done:
+
+#### Example:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <mutex>
+#include <condition_variable>
+
+class BinarySemaphore {
+private:
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool signal = false;
+
+public:
+    // Acquire the semaphore (wait)
+    void wait() {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [this] { return signal; });  // Wait until signal is true
+        signal = false;  // Reset the signal after consuming it
+    }
+
+    // Release the semaphore (signal)
+    void notify() {
+        std::lock_guard<std::mutex> lock(mtx);
+        signal = true;  // Set the signal
+        cv.notify_one();  // Notify one waiting thread
+    }
+};
+
+BinarySemaphore semaphore;
+
+void worker(int id) {
+    std::cout << "Worker " << id << " waiting for signal...\n";
+    semaphore.wait();  // Wait for the signal
+    std::cout << "Worker " << id << " received signal, proceeding...\n";
+}
+
+int main() {
+    std::thread t1(worker, 1);
+    std::thread t2(worker, 2);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // Simulate some work
+
+    // Notify the waiting threads
+    semaphore.notify();
+    semaphore.notify();
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+#### Explanation:
+- **wait()**: The `wait()` method blocks the thread until the semaphore is signaled. When a thread calls `wait()`, it checks if the signal is available. If not, it will block until it is notified by another thread.
+- **notify()**: The `notify()` method signals the semaphore and wakes up one of the waiting threads.
+
+---
+
+### Binary Semaphore Using `std::binary_semaphore` (C++20)
+
+Starting from C++20, `std::binary_semaphore` is introduced, which provides a more direct and efficient binary semaphore implementation without needing to manually manage condition variables or mutexes.
+
+#### Example:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <semaphore>  // C++20 feature
+
+std::binary_semaphore semaphore(0);  // Initially locked (0 means locked)
+
+void worker(int id) {
+    std::cout << "Worker " << id << " waiting for signal...\n";
+    semaphore.acquire();  // Wait for the signal
+    std::cout << "Worker " << id << " received signal, proceeding...\n";
+}
+
+int main() {
+    std::thread t1(worker, 1);
+    std::thread t2(worker, 2);
+
+    std::this_thread::sleep_for(std::chrono::seconds(2));  // Simulate some work
+
+    // Notify the waiting threads
+    semaphore.release();  // Signal to release one waiting thread
+    semaphore.release();  // Signal to release the next waiting thread
+
+    t1.join();
+    t2.join();
+
+    return 0;
+}
+```
+
+#### Explanation:
+- **`acquire()`**: Blocks the thread until the semaphore is available. It decreases the internal counter, and if the counter is 0, it will block until the semaphore is signaled.
+- **`release()`**: Increases the internal counter, making the semaphore available. It can unblock one of the waiting threads.
+
+---
+
+### Comparison of Approaches:
+
+| Feature                                 | `std::mutex` and `std::condition_variable` (Pre-C++20) | `std::binary_semaphore` (C++20) |
+|-----------------------------------------|-------------------------------------------------------|--------------------------------|
+| Ease of Use                             | Requires more manual management                       | Simplified usage               |
+| Functionality                           | Manual implementation of semaphore behavior           | Direct binary semaphore support |
+| Performance                             | Slightly more overhead (mutex + condition variable)    | Optimized for semaphore use    |
+| Available                               | C++11 and later                                       | C++20 and later                |
+
+---
+
+
+### Differences and Similarities Between Semaphore and Mutex
+
+Semaphores and mutexes are both synchronization primitives used to control access to shared resources in multithreaded environments. While they share some similarities, they serve distinct purposes and have different behaviors.
+
+---
+
+### **Differences Between Semaphore and Mutex**
+
+| **Feature**           | **Semaphore**                                          | **Mutex**                                                |
+|-----------------------|--------------------------------------------------------|----------------------------------------------------------|
+| **Purpose**            | Controls access to a resource by multiple threads based on a counter. Can allow multiple threads to access a resource simultaneously (for a counting semaphore). | Provides exclusive access to a resource; only one thread can lock a mutex at a time. |
+| **Ownership**          | Not owned by a thread, so any thread can signal (increment) or wait (decrement) the semaphore. | Owned by the thread that locks it. Only the thread that locks the mutex can unlock it. |
+| **Types**              | Two types: <ul><li>Binary Semaphore</li><li>Counting Semaphore</li></ul> | Typically only one type: a mutex, which ensures mutual exclusion. |
+| **Multiple Access**    | Counting semaphores allow multiple threads to access the resource simultaneously, based on the semaphore’s counter. | Mutexes provide exclusive access: only one thread can access the resource at a time. |
+| **Usage**              | Best suited for signaling between threads or controlling access to a resource with a known capacity (e.g., a pool of connections). | Best suited for mutually exclusive access to a shared resource, where only one thread should operate on the resource at a time. |
+| **Blocking**           | A thread that attempts to acquire a semaphore will block if the semaphore’s counter is 0 (binary semaphore) or if the maximum count is reached (counting semaphore). | A thread that attempts to lock a mutex will block if it is already locked by another thread. |
+| **Deadlock Prevention** | Deadlock can occur, but semaphores are less prone to deadlocks compared to mutexes, as they are not owned by threads and don’t enforce strict ownership. | More prone to deadlocks due to strict ownership rules, especially if mutexes are acquired in the wrong order or not released properly. |
+| **Signal Mechanism**   | Any thread can signal a semaphore (increment its counter), allowing other threads to proceed. | Only the thread that owns (locked) the mutex can unlock it. |
+| **Kernel/User Space**  | Semaphores can be implemented in both user space and kernel space. | Mutexes are usually implemented in kernel space for better control over thread scheduling and context switching. |
+| **Fairness**           | Semaphores can be unfair, meaning the order in which threads are woken up may not be guaranteed. | Mutexes typically offer fairness with first-in, first-out (FIFO) behavior, depending on the system implementation. |
+| **Recursive Locking**  | Not allowed; semaphores don’t track ownership, so recursive locking (same thread acquiring multiple locks) can lead to problems. | Recursive mutexes allow the same thread to lock a mutex multiple times without deadlock (e.g., `std::recursive_mutex` in C++). |
+| **Use in Inter-Process Communication (IPC)** | Semaphores are commonly used for synchronization across processes (in multi-process systems). | Mutexes are generally used within the same process and are primarily for intra-thread communication. |
+
+---
+
+### **Similarities Between Semaphore and Mutex**
+
+| **Feature**                | **Semaphore** and **Mutex** |
+|----------------------------|----------------------------------------------------------|
+| **Used for Synchronization** | Both are used to synchronize threads and prevent race conditions by controlling access to shared resources. |
+| **Blocking**                | Both can block threads that try to acquire a resource that is not available (for semaphores when the count is 0, for mutexes when they are locked). |
+| **Shared Resource Protection** | Both are used to protect access to shared resources to prevent data corruption or inconsistent state changes. |
+| **Kernel and User Space**    | Both can be implemented in user space or kernel space, though mutexes are typically implemented in kernel space for system-level control. |
+| **Support in C++**           | C++ provides support for both `std::mutex` (for mutexes) and `std::binary_semaphore`/`std::counting_semaphore` (for semaphores starting in C++20). |
+| **Preventing Race Conditions** | Both are tools to help prevent race conditions by ensuring proper synchronization between threads or processes. |
+
+---
+
+### **When to Use Mutex vs Semaphore**
+
+- **Use a Mutex**:
+  - When **mutual exclusion** is required (i.e., only one thread can access the resource at a time).
+  - When you need strict **ownership** rules (i.e., only the thread that locks the mutex can unlock it).
+  - When the resource must be **locked exclusively** by a single thread.
+
+- **Use a Semaphore**:
+  - When multiple threads are allowed to access a resource **simultaneously** (e.g., a pool of resources where multiple clients can acquire).
+  - When **signaling** between threads is required (e.g., a producer-consumer scenario).
+  - When you need a mechanism that can be used to **control the number of concurrent accesses** to a shared resource (e.g., counting semaphore).
+
+---
+
+### Producer-Consumer Problem Using Semaphores
+
+The **Producer-Consumer Problem** is a classic example of multithreaded synchronization where one or more producers are generating data and placing it into a shared buffer, and one or more consumers are removing the data from the buffer for processing. The producers and consumers must be synchronized to ensure that:
+1. Producers wait if the buffer is full.
+2. Consumers wait if the buffer is empty.
+
+### Semaphores Used in the Solution:
+1. **Empty Semaphore**: Tracks the number of empty slots in the buffer (initially set to the buffer size).
+2. **Full Semaphore**: Tracks the number of full slots in the buffer (initially set to 0).
+3. **Mutex**: Ensures mutual exclusion when accessing the shared buffer.
+
+---
+
+### Solution Outline
+
+1. **Producer Thread**:
+   - Waits on the "empty" semaphore (which ensures that there is space in the buffer).
+   - Locks the "mutex" to ensure exclusive access to the buffer.
+   - Adds an item to the buffer.
+   - Unlocks the "mutex".
+   - Signals the "full" semaphore (indicating that there is at least one item in the buffer).
+
+2. **Consumer Thread**:
+   - Waits on the "full" semaphore (which ensures that there is at least one item in the buffer).
+   - Locks the "mutex" to ensure exclusive access to the buffer.
+   - Removes an item from the buffer.
+   - Unlocks the "mutex".
+   - Signals the "empty" semaphore (indicating that there is at least one empty slot in the buffer).
+
+---
+
+### Example: Producer-Consumer Using Semaphores
+
+Here is a C++ solution using semaphores to solve the producer-consumer problem:
+
+```cpp
+#include <iostream>
+#include <thread>
+#include <queue>
+#include <semaphore>  // For std::binary_semaphore and std::counting_semaphore (C++20)
+#include <mutex>
+#include <chrono>
+
+const int BUFFER_SIZE = 5;
+std::queue<int> buffer;  // Shared buffer
+
+std::counting_semaphore<BUFFER_SIZE> empty(BUFFER_SIZE);  // Initially all slots are empty
+std::counting_semaphore<0> full(0);  // Initially no items in the buffer
+std::mutex mtx;  // Mutex to protect shared buffer
+
+void producer(int id) {
+    int item = 0;
+    while (true) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1000));  // Simulate production time
+
+        empty.acquire();  // Wait until there is an empty slot
+        std::lock_guard<std::mutex> lock(mtx);  // Lock the buffer
+        buffer.push(item);  // Add the produced item to the buffer
+        std::cout << "Producer " << id << " produced item " << item << std::endl;
+        item++;  // Produce the next item
+        full.release();  // Signal that an item has been added to the buffer
+    }
+}
+
+void consumer(int id) {
+    while (true) {
+        full.acquire();  // Wait until there is an item to consume
+        std::lock_guard<std::mutex> lock(mtx);  // Lock the buffer
+        int item = buffer.front();
+        buffer.pop();  // Remove the item from the buffer
+        std::cout << "Consumer " << id << " consumed item " << item << std::endl;
+        empty.release();  // Signal that a buffer slot is empty
+        std::this_thread::sleep_for(std::chrono::milliseconds(1500));  // Simulate consumption time
+    }
+}
+
+int main() {
+    // Create producer and consumer threads
+    std::thread producer1(producer, 1);
+    std::thread producer2(producer, 2);
+    std::thread consumer1(consumer, 1);
+    std::thread consumer2(consumer, 2);
+
+    // Join threads (this will actually never end as the loops run infinitely)
+    producer1.join();
+    producer2.join();
+    consumer1.join();
+    consumer2.join();
+
+    return 0;
+}
+```
+
+---
+
+### Explanation of the Code:
+
+1. **Semaphores**:
+   - **`empty`**: Initialized with the size of the buffer (`BUFFER_SIZE`), indicating how many empty slots are available in the buffer.
+   - **`full`**: Initialized to 0, as there are no items in the buffer initially.
+
+2. **Producer Thread**:
+   - The producer first waits for an empty slot in the buffer using `empty.acquire()`.
+   - After acquiring an empty slot, it locks the mutex and adds an item to the buffer.
+   - The producer then releases the lock and signals the `full` semaphore to notify that there is a new item in the buffer.
+
+3. **Consumer Thread**:
+   - The consumer waits for the `full` semaphore to ensure there is an item in the buffer.
+   - After acquiring the semaphore, the consumer locks the mutex, consumes the item (removes it from the buffer), and then signals the `empty` semaphore to indicate that a buffer slot is now free.
+
+4. **Mutex**:
+   - The mutex ensures mutual exclusion when accessing the buffer. This prevents race conditions where multiple threads try to read or write to the buffer simultaneously.
+
+---
+
+### Key Points:
+
+1. **Synchronization with Semaphores**:
+   - **`empty` semaphore** ensures that the producer waits if the buffer is full.
+   - **`full` semaphore** ensures that the consumer waits if the buffer is empty.
+
+2. **Mutual Exclusion with Mutex**:
+   - The `std::mutex` ensures that the shared buffer is accessed by only one thread at a time (either a producer or a consumer).
+
+3. **Thread Management**:
+   - Multiple producer and consumer threads can run in parallel, and the semaphores ensure correct synchronization between them.
 
 ---
 
