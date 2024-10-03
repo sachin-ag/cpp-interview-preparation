@@ -1032,7 +1032,7 @@ The performance of a system using virtual memory can be measured by analyzing ke
 This is a key metric to determine the performance impact of virtual memory. It calculates the **average time** taken to access memory, taking into account the probability of a **page fault** and the time required to handle it.
 
 ##### **Formula**:
-\[ \text{EAT} = (1 - p) \times \text{Memory Access Time} + p \times (\text{Page Fault Service Time}) \]
+`EAT = (1-p) * (Memory Access Time) + p * (Page Fault Service Time)`
 
 Where:
 - **p** = Page fault rate (probability of a page fault occurring).
