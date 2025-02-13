@@ -1609,7 +1609,7 @@ void* operator new(std::size_t size, const char* msg) {
     return std::malloc(size);
 }
 ```
-
+x
 ### Summary:
 
 - **`new` vs `malloc`**:
